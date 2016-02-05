@@ -1,0 +1,174 @@
+Software Setup
+
+git clone 时遇到证书问题，解决方法：
+GIT_SSL_NO_VERIFY=1 git clone https://pdos.csail.mit.edu/6.828/2014/jos.git lab
+
+Lab 运行方法：
+方式1. 直接运行 命令： make qemu
+方式2. 用 GDB 边调试边运行 两个终端都切到相同目录，
+          在第一个终端中运行： make qemu
+          第二个终端运行： gdb
+             GDB 可能需要一个小小的额外操作才能让它按照 gdbinit 文件操作
+
+=====
+Exercise 2. FIXME 尚未解决
+跟进 BIOS 代码之后并不知道它在干些什么。。。只知道先切进保护模式之后又切出来了。。。
+
+=====
+Exercise 3.
+
+obj/boot/boot.asm 是把 boot/boot.S 和 boot/main.c 编译之后再反汇编得到的，在单步跟踪时很有用。
+
+=====
+Part 2: The Boot Loader
+
+ Be able to answer the following questions:
+    At what point does the processor start executing 32-bit code? What exactly causes the switch from 16- to 32-bit mode?
+答：在 ljmp    $PROT_MODE_CSEG, $protcseg 这条指令之后，参考资料 http://wiki.osdev.org/Protected_Mode
+    What is the last instruction of the boot loader executed, and what is the first instruction of the kernel it just loaded?
+答：在 boot/main.c 里 void bootmain(void) 函数中那句 ((void (*)(void)) (ELFHDR->e_entry))();
+    Where is the first instruction of the kernel?
+答：在 ELFHDR->e_entry 指向的位置，实际上在 0x00100000 处
+    How does the boot loader decide how many sectors it must read in order to fetch the entire kernel from disk? Where does it find this information?
+答：根据 ELF 文件头可以找到 ELF 程序头 (program header) 里面有具体的信息
+
+=====
+Exercise 5.
+
+第一条用到绝对引用的是 lgdt    gdtdesc 指令，因此它进不去保护模式了
+
+=====
+Exercise 6.
+0x00100000 是内核代码段应该被存储的位置。
+
+(gdb) b *0x7c00
+Breakpoint 1 at 0x7c00
+(gdb) b *0x7d61
+Breakpoint 2 at 0x7d61
+(gdb) c
+Continuing.
+[   0:7c00] => 0x7c00:	cli    
+
+Breakpoint 1, 0x00007c00 in ?? ()
+(gdb) x/10x 0x00100000
+0x100000:	0x00000000	0x00000000	0x00000000	0x00000000
+0x100010:	0x00000000	0x00000000	0x00000000	0x00000000
+0x100020:	0x00000000	0x00000000
+(gdb) c
+Continuing.
+The target architecture is assumed to be i386
+=> 0x7d61:	call   *0x10018
+
+Breakpoint 2, 0x00007d61 in ?? ()
+(gdb) x/10x 0x00100000
+0x100000:	0x1badb002	0x00000000	0xe4524ffe	0x7205c766
+0x100010:	0x34000004	0x0000b812	0x220f0011	0xc0200fd8
+0x100020:	0x0100010d	0xc0220f80
+(gdb) 
+
+=====
+Exercise 7.
+
+启用虚拟地址后，虚拟地址 0xf0100000 和 0x00100000 开始的两块 4MB 内存都映射到物理地址 0x00100000 处。因此，地址 0x00100000 附近映射前后相当于没有变化，当 movl	%eax, %cr0 （启用映射）这句指令执行完后，后面的指令可以被找到并执行。如果没有启用映射，当跳转到高地址处之后，哪里并没有指令可以执行。
+
+=====
+Exercise 8.
+
+仿照 %u 的代码写就可以了
+
+=====
+ Be able to answer the following questions:
+
+    Explain the interface between printf.c and console.c. Specifically, what function does console.c export? How is this function used by printf.c?
+答：console.c 导出了很多函数，但被 printf.c 用到的只有 cputchar() 这个。不论是怎样花哨的输出函数，最终都是要按照字符一个一个地输出，printf.c 中 putch() 函数就是做字符级别的输出的。putch() 调用了 cputchar()。putch() 被 vcprintf() 传给 vprintfmt 当做回调函数。
+    Explain the following from console.c:
+
+    1      if (crt_pos >= CRT_SIZE) {
+    2              int i;
+    3              memcpy(crt_buf, crt_buf + CRT_COLS, (CRT_SIZE - CRT_COLS) * sizeof(uint16_t));
+    4              for (i = CRT_SIZE - CRT_COLS; i < CRT_SIZE; i++)
+    5                      crt_buf[i] = 0x0700 | ' ';
+    6              crt_pos -= CRT_COLS;
+    7      }
+答：滚屏用
+    For the following questions you might wish to consult the notes for Lecture 2. These notes cover GCC's calling convention on the x86.
+
+    Trace the execution of the following code step-by-step:
+
+    int x = 1, y = 3, z = 4;
+    cprintf("x %d, y %x, z %d\n", x, y, z);
+
+        In the call to cprintf(), to what does fmt point? To what does ap point?
+        List (in order of execution) each call to cons_putc, va_arg, and vcprintf. For cons_putc, list its argument as well. For va_arg, list what ap points to before and after the call. For vcprintf list the values of its two arguments.
+答：可以把这段代码加到 init.c 中 i386_init() 里面运行。fmt 指向格式字符串，va 实际上是个指针。由于有编译优化可能看不到具体的值。
+栈的结构：
+..... 低地址
+0x00000000
+0xf010fff8
+0xf0100102 返回地址
+ ----- 栈帧
+0xf0101932 => 指向格式字符串 "x %d, y %x, z %d\n" 的指针（第一参数）
+0x00000001 第二参数 <= va 一开始指向这里，随着 va_arg() 调用向后面参数移动
+0x00000003 第三参数
+0x00000004 第三参数
+0x00000000
+0x00000000
+..... 高地址
+
+    Run the following code.
+
+        unsigned int i = 0x00646c72;
+        cprintf("H%x Wo%s", 57616, &i);
+
+    What is the output? Explain how this output is arrived at in the step-by-step manner of the previous exercise. Here's an ASCII table that maps bytes to characters.
+
+    The output depends on that fact that the x86 is little-endian. If the x86 were instead big-endian what would you set i to in order to yield the same output? Would you need to change 57616 to a different value?
+
+    Here's a description of little- and big-endian and a more whimsical description.
+答：大端小端相关，略。
+    In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+        cprintf("x=%d y=%d", 3);
+答：参考上面的那个栈的示意图。
+    Let's say that GCC changed its calling convention so that it pushed arguments on the stack in declaration order, so that the last argument is pushed last. How would you have to change cprintf or its interface so that it would still be possible to pass it a variable number of arguments?
+答：需要直接或间接地指定第一参数的所在地址。
+
+=====
+Exercise 9.
+
+目前，内核还在启动阶段，C 程序使用的是启动阶段临时开辟的一段栈空间。在 kern/entry.S 中 movl	$(bootstacktop),%esp 这个指令设置好了栈指针。并且在文件的最后，在 .data 节里面预留了栈空间。实际上在栈顶在 0xf0110000 这个位置。
+程序头：
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  LOAD           0x001000 0xf0100000 0x00100000 0x07101 0x07101 R E 0x1000
+  LOAD           0x009000 0xf0108000 0x00108000 0x0a300 0x0a944 RW  0x1000 <= 栈在这里！
+节头：
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            00000000 000000 000000 00      0   0  0
+  [ 1] .text             PROGBITS        f0100000 001000 0018b7 00  AX  0   0 16
+  [ 2] .rodata           PROGBITS        f01018c0 0028c0 000730 00   A  0   0 32
+  [ 3] .stab             PROGBITS        f0101ff0 002ff0 003829 0c   A  4   0  4
+  [ 4] .stabstr          STRTAB          f0105819 006819 0018e8 00   A  0   0  1
+  [ 5] .data             PROGBITS        f0108000 009000 00a300 00  WA  0   0 4096 <= 栈在这里！
+  [ 6] .bss              NOBITS          f0112300 013300 000644 00  WA  0   0 32
+  [ 7] .comment          PROGBITS        00000000 013300 000029 01  MS  0   0  1
+  [ 8] .shstrtab         STRTAB          00000000 013329 00004c 00      0   0  1
+  [ 9] .symtab           SYMTAB          00000000 013530 000640 10     10  45  4
+  [10] .strtab           STRTAB          00000000 013b70 00036a 00      0   0  1
+栈必须在 .data 节里面，要是在 .bss 里面就要被 memset 给清空了。
+
+=====
+Exercise 10.
+
+栈
+0xf010ff3c:	0xf0100069 RET	0x00000000 ARG1	0x00000001	0xf010ff78
+0xf010ff4c:	0x00000000	0xf01008db	0x00000002	0xf010ff78 <= EBP
+0xf010ff5c:	0xf0100069 RET	0x00000001 ARG1	0x00000002	0xf010ff98
+0xf010ff6c:	0x00000000	0xf01008db	0x00000003	0xf010ff98 <= EBP
+0xf010ff7c:	0xf0100069 RET	0x00000002 ARG1	0x00000003	0xf010ffb8
+0xf010ff8c:	0x00000000	0xf01008db	0x00000004	0xf010ffb8 <= EBP
+0xf010ff9c:	0xf0100069 RET	0x00000003 ARG1	0x00000004	0x00000000
+0xf010ffac:	0x00000000	0x00000000	0x00000005	0xf010ffd8 <= EBP
+0xf010ffbc:	0xf0100069 RET	0x00000004 ARG1	0x00000005	0x00000000
+0xf010ffcc:	0x00010094	0x00010094	0x00010094	0xf010fff8
+0xf010ffdc:	0xf01000ea	0x00000005	0x00001aac	0x00000644
+0xf010ffec:	0x00000000	0x00000000	0x00000000	0x00000000
+0xf010fffc:	0xf010003e	0x00111021	0x00000000	0x00000000
