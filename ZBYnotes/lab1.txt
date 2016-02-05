@@ -172,3 +172,43 @@ Exercise 10.
 0xf010ffdc:	0xf01000ea	0x00000005	0x00001aac	0x00000644
 0xf010ffec:	0x00000000	0x00000000	0x00000000	0x00000000
 0xf010fffc:	0xf010003e	0x00111021	0x00000000	0x00000000
+
+=====
+Exercise 12.
+
+在 kern/kernel.ld 里面通过 PROVIDE 导出 __STAB_BEGIN__ __STAB_END__ __STABSTR_BEGIN__ __STABSTR_END__ 这四个符号。
+	.stab : {
+		PROVIDE(__STAB_BEGIN__ = .);
+		*(.stab);
+		PROVIDE(__STAB_END__ = .);
+		BYTE(0)		/* Force the linker to allocate space
+				   for this section */
+	}
+	.stabstr : {
+		PROVIDE(__STABSTR_BEGIN__ = .);
+		*(.stabstr);
+		PROVIDE(__STABSTR_END__ = .);
+		BYTE(0)		/* Force the linker to allocate space
+				   for this section */
+	}
+
+通过 readelf -l obj/kern/kernel 命令可以看到 .stab .stabstr 与 .text .rodata 一起被加载。
+
+	Elf 文件类型为 EXEC (可执行文件)
+	入口点 0x10000c
+	共有 3 个程序头，开始于偏移量 52
+
+	程序头：
+	  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+	  LOAD           0x001000 0xf0100000 0x00100000 0x072de 0x072de R E 0x1000
+	  LOAD           0x009000 0xf0108000 0x00108000 0x0a300 0x0a944 RW  0x1000
+	  GNU_STACK      0x000000 0x00000000 0x00000000 0x00000 0x00000 RWE 0x10
+
+	 Section to Segment mapping:
+	  段节...
+	   00     .text .rodata .stab .stabstr 
+	   01     .data .bss 
+	   02   
+
+可以通过 objdump -G obj/kern/kernel | less 看到 .stab 中的内容。其中行号的 n_type 是 SLINE。
+debuginfo_eip() 的行号部分需要自己处理。
