@@ -1,0 +1,64 @@
+Exercise 12.
+
+boot_alloc():
+    从 .bss 节末尾出向后分配内存。分配算法非常简单：每次 +n 再 ROUNDUP 即可。
+    要实现无内存可分配时 panic 的功能，需要用到
+        npages 系统总共可用页面数，也是 最后一个可用物理页面的物理页号 + 1
+        PADDR() 转换内核虚址到物理地址，是 kern/pmap.h 提供的转换物理地址、内核虚拟地址、PageInfo 结构体地址等的有用的函数中的一个
+        PGNUM() 转换物理地址到物理页号，是 inc/mmu.h 提供的转换物理地址、物理页号、业内偏移等的有用的函数中的一个   
+
+mem_init():
+	//////////////////////////////////////////////////////////////////////
+	// Allocate an array of npages 'struct PageInfo's and store it in 'pages'.
+	// The kernel uses this array to keep track of physical pages: for
+	// each physical page, there is a corresponding struct PageInfo in this
+	// array.  'npages' is the number of physical pages in memory.  Use memset
+	// to initialize all fields of each struct PageInfo to 0.
+	根据指示调用 boot_alloc() 和 memset() 分配并清空即可。
+
+JOS 用一系列 struct PageInfo 串成的链表管理空闲内存:
+    struct PageInfo 的定义在 inc/memlayout.h 中。
+        /*
+         * Page descriptor structures, mapped at UPAGES.
+         * Read/write to the kernel, read-only to user programs.
+         *
+         * Each struct PageInfo stores metadata for one physical page.
+         * Is it NOT the physical page itself, but there is a one-to-one
+         * correspondence between physical pages and struct PageInfo's.
+         * You can map a struct PageInfo * to the corresponding physical address
+         * with page2pa() in kern/pmap.h.
+         */
+        struct PageInfo {
+            // Next page on the free list.
+            struct PageInfo *pp_link;
+
+            // pp_ref is the count of pointers (usually in page table entries)
+            // to this page, for pages allocated using page_alloc.
+            // Pages allocated at boot time using pmap.c's
+            // boot_alloc do not have valid reference count fields.
+
+            uint16_t pp_ref;
+        }
+    可以看出结构体里只有两个元素：next 指针 pp_link 和引用计数 pp_ref，占用内存很小。
+    注释指出 page2pa() 可以把一个指向结构体的指针，转换为指向物理页起始地址的指针。可以发现，结构体中两个元素没有一个与物理页地址有关，这是因为：为了节省内存，结构体对应哪一个物理页面是由结构体本身在 page 数组中的位置决定的，实际上在数组中的下标即是物理页号（因此结构体不能够被复制或移动，因为结构体本身的位置也是所存储的信息的一部分）。
+
+page_init():
+    原本给的代码是需要修改的代码。原本所有物理内存页面都在空闲链表中，这显然是不正确的。
+    根据注释，空闲的内存页面有两部分：
+        物理地址 [PGSIZE, npages_basemem * PGSIZE)
+            这一部分的物理页号是 [1, npages_basemem)
+        物理地址 [EXTPHYSMEM, ...) 除去内核已经用的部分
+            已经用的部分：内核本身以及使用 boot_alloc 分配的部分。
+            其实就是 boot_alloc(0) 转换成物理地址之后的部分
+            这一部分的物理页号是 [PGNUM(PADDR(boot_alloc(0))), npages)
+                PADDR(), PGNUM() 作用见上
+
+page_alloc():
+    清空物理页面有些疑惑，因为无法根据物理地址来访问内存。
+    根据 Hint 的提示和 memlayout.h 的图示，猜测内核虚拟地址 [KERNBASE, 4G-1) 以上的映射到物理地址 [0, 2G-1)。
+    不过，这样一来计算机能够使用的内存最多只有 2GB
+
+page_free():
+    按注释实现即可
+
+=====

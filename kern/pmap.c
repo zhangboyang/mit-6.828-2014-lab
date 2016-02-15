@@ -96,10 +96,15 @@ boot_alloc(uint32_t n)
 	// Allocate a chunk large enough to hold 'n' bytes, then update
 	// nextfree.  Make sure nextfree is kept aligned
 	// to a multiple of PGSIZE.
-	//
-	// LAB 2: Your code here.
+	result = nextfree;
+	nextfree += n;
+	ZBYassert(sizeof(typeof(*nextfree)) == 1); // make sure operator + increase pointer by 1
+	nextfree = ROUNDUP(nextfree, PGSIZE);
+	ZBYassert(nextfree - result >= n); // make sure have enough space
+	if (PGNUM(PADDR(nextfree)) > npages)
+	    panic("out of memory, n = ", n);
 
-	return NULL;
+	return result;
 }
 
 // Set up a two-level page table:
@@ -119,9 +124,6 @@ mem_init(void)
 
 	// Find out how much memory the machine has (npages & npages_basemem).
 	i386_detect_memory();
-
-	// Remove this line when you're ready to test this function.
-	panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
@@ -143,8 +145,8 @@ mem_init(void)
 	// each physical page, there is a corresponding struct PageInfo in this
 	// array.  'npages' is the number of physical pages in memory.  Use memset
 	// to initialize all fields of each struct PageInfo to 0.
-	// Your code goes here:
-
+	pages = boot_alloc(npages * sizeof(struct PageInfo));
+	memset(pages, 0,   npages * sizeof(struct PageInfo));
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -248,11 +250,33 @@ page_init(void)
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
 	size_t i;
-	for (i = 0; i < npages; i++) {
+	// base memory is free
+	for (i = 1; i < npages_basemem; i++) {
+        pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+	// extended memory after kva boot_alloc(0) is free
+	for (i = PGNUM(PADDR(boot_alloc(0))); i < npages; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
+	
+	#ifdef ZBYDEBUG
+    struct PageInfo *node = page_free_list;
+    size_t cnt = 0;
+    while (node) {
+        ZBYassert(node - pages != 0);
+        ZBYassert(!(IOPHYSMEM <= page2pa(node) &&
+                        page2pa(node) < EXTPHYSMEM));
+        ZBYassert(!(PADDR(pages) <= page2pa(node) &&
+                        page2pa(node) < PADDR(pages + npages)));
+        node = node->pp_link;
+        cnt++;
+    }
+    cprintf("Free physical pages: %d (%d KB)\n", cnt, cnt * PGSIZE / 1024);
+	#endif
 }
 
 //
@@ -270,8 +294,26 @@ page_init(void)
 struct PageInfo *
 page_alloc(int alloc_flags)
 {
-	// Fill this function in
-	return 0;
+    if (!page_free_list) {
+        // page_free_list is empty, no more free memory
+        return NULL;
+    };
+    
+    struct PageInfo *result;
+    
+    // get a free page from linked-list
+    result = page_free_list;
+    page_free_list = page_free_list->pp_link;
+    
+    // zero memory if necessary
+	if (alloc_flags & ALLOC_ZERO) {
+	    memset(page2kva(result), 0, PGSIZE);
+	}
+	
+	// avoid dangling pointer
+	result->pp_link = NULL;
+	
+	return result;
 }
 
 //
@@ -284,6 +326,14 @@ page_free(struct PageInfo *pp)
 	// Fill this function in
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
+	if (pp->pp_ref != 0)
+	    panic("pp_ref is non-zero, pp_ref = %d", pp->pp_ref);
+	if (pp->pp_link != NULL)
+	    panic("double free %p detected", pp);
+	
+	// insert to linked-list
+	pp->pp_link = page_free_list;
+	page_free_list = pp;
 }
 
 //
