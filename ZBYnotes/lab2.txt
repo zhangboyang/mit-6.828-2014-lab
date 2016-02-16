@@ -1,4 +1,4 @@
-Exercise 12.
+Exercise 1.
 
 boot_alloc():
     从 .bss 节末尾出向后分配内存。分配算法非常简单：每次 +n 再 ROUNDUP 即可。
@@ -62,3 +62,40 @@ page_free():
     按注释实现即可
 
 =====
+Exercise 2.
+
+主要看手册，可结合《LINUX内核源代码情景分析》第2章看
+
+=====
+Exercise 3.
+
+Ctrl-a, c 要在终端里按，不在 QEMU 弹出的模拟窗口里按
+xp/10w 0x100000 (uint32_t)
+xp/10h 0x100000 (uint16_t)
+xp/10b 0x100000 (uint8_t)
+xp/10c 0x100000 (char)
+
+=====
+Question
+
+    Assuming that the following JOS kernel code is correct, what type should variable x have, uintptr_t or physaddr_t?
+
+    	mystery_t x;
+    	char* value = return_a_pointer();
+    	*value = 10;
+    	x = (mystery_t) value;
+
+根据之前描述可以知道
+T* (C 源码中的指针) 存储的是虚拟地址，访问也是按照虚拟地址访问的
+uintptr_t 其实是个 uint32_t，用来存储虚拟地址
+physaddr_t 其实也是 uint32_t，用来存储物理地址
+在 T* 和 uintptr_t/physaddr_t 转换时会抛出警告（因为实际上是指针和整数转换）
+要千万注意不要直接不加思考忽略转换警告，因为如果直接强制类型转换，很可能有逻辑错误（虚拟地址、物理地址并不相同）
+uintptr_t 和 physaddr_t 转换是没有警告（因为实际上它们都是 uint32_t）！但是不可以直接赋值转换！
+要在 C 源码中访问物理地址 pa，需要转换，即访问 VADDR(pa) 这个虚拟地址
+要在 C 源码中*内核数据结构的地址*转换为物理地址，用 PADDR(kva)
+不属于内核的虚拟地址，需要 page-walk，不能直接用 PADDR() 进行转换
+
+答：mystery_t 应该是 uintptr_t。程序中直接把指针 (T*, 虚拟地址) 强制类型转换为 mystery_t 可知 mystery_t 存储的是虚拟地址。
+
+
