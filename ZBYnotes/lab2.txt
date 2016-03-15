@@ -98,4 +98,16 @@ uintptr_t 和 physaddr_t 转换是没有警告（因为实际上它们都是 uin
 
 答：mystery_t 应该是 uintptr_t。程序中直接把指针 (T*, 虚拟地址) 强制类型转换为 mystery_t 可知 mystery_t 存储的是虚拟地址。
 
+=====
+Exercise 4.
+
+pgdir_walk(pgdir, va, create) 返回的是一个指向页表项的指针
+boot_map_region(pgdir, va, size, pa, perm) 映射一段区域，只应在初始化时用来创建映射
+page_insert(pgdir, pp, va, perm) 映射一个指定的页面到指定的位置
+    要注意 pp 所代表的页面与当前 va 映射到的页面是同一个物理页的情况。
+    一个优美的解决办法是，先增加页面的引用计数，再调用 page_remove()
+page_lookup(pgdir, va, pte_store) 查询 va 所映射到的 PageInfo 结构体，并把 pte_store 内容置为指向页表项的指针
+page_remove(pgdir, va) 删除页表中 va 的映射，如果页面的映射
+
+
 

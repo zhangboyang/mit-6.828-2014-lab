@@ -497,10 +497,10 @@ page_remove(pde_t *pgdir, void *va)
 {
 	// Fill this function in
 	pte_t *ppte;
-	struct PageInfo *ppi = page_lookup(pgdir, va, &ppte);
-	if (ppi) {
+	struct PageInfo *pp = page_lookup(pgdir, va, &ppte);
+	if (pp) {
 	    *ppte = 0; // make pte invalid
-	    page_decref(ppi); // invalid this physical page
+	    page_decref(pp); // invalid this physical page
 	    tlb_invalidate(pgdir, va); // inv tlb
 	}
 }
